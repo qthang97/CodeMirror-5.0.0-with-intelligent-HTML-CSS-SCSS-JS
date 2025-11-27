@@ -6,14 +6,21 @@
 // @author       You
 // @match        https://*.mysapo.net/admin/themes/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=mysapo.net
-// @grant        GM_addStyle
 // @run-at       document-idle
 // @grant        window.onurlchange
 // ==/UserScript==
 
 ;(function () {
 	'use strict'
+	console.log('Sapo Intelligent All-in-One Loaded')
 
+	const DEBUG_MODE = false
+
+	function debugLog(...args) {
+		if (DEBUG_MODE) {
+			console.log('%c[Sapo-Debug]', 'color: #e0005a; font-weight: bold;', ...args)
+		}
+	}
 	function waitLoadElement(elemWait, funCallback) {
 		// Wait load element
 		let count = 0
@@ -236,6 +243,7 @@
 	async function fetchExternalCSS(forceUpdate = false) {
 		console.log('[All-in-One] Bắt đầu tiến trình lấy CSS...')
 		let EXTERNAL_CSS_URL = []
+		let cachedData = new Map()
 
 		// 1. Lấy danh sách file từ Sidebar
 		let sideBar_el = document.querySelector('#asset-list-container')
@@ -256,7 +264,7 @@
 
 		try {
 			let adminUrl = window.location.href
-			let matchUrlWithAdmin = adminUrl.match(/https:\/\/\w.+\/admin\/themes\/\d+/i)
+			let matchUrlWithAdmin = adminUrl.match(/(https:\/\/\w.+\/admin\/themes\/)(\d+)/i)
 			if (!matchUrlWithAdmin) throw 'Cannot found url admin/themes/ID'
 
 			// Reset Set nếu force update
@@ -275,11 +283,12 @@
 
 				// Xây dựng URL chuẩn để fetch asset (dựa trên logic cũ của bạn)
 				// Lưu ý: key phải là assetKey thực tế (ví dụ: assets/theme.css)
-				let url = matchUrlWithAdmin[0] + '/assets?asset[key]=' + encodeURIComponent(assetKey)
+				let url = matchUrlWithAdmin[1] + 'assets/' + matchUrlWithAdmin[2] + '?key=' + encodeURIComponent(assetKey)
 
 				// Fetch dữ liệu
 				const response = await fetch(url, {
 					headers: {
+						'content-type': 'application/json; charset=utf-8',
 						Accept: 'application/json',
 						'X-Requested-With': 'XMLHttpRequest',
 						'X-CSRF-Token': getCsrfToken(), // Hoặc hàm getCsrfToken() của bạn
@@ -299,16 +308,17 @@
 				// 3. Regex lấy Class name
 				if (cssContent && typeof cssContent === 'string') {
 					// Regex này lấy class bắt đầu bằng dấu chấm
-					const regex = /\.([a-zA-Z0-9_\-]+)/g
+					const regex = /\.([a-zA-Z0-9_\-]+)\s*\{/g
 					let match
 					while ((match = regex.exec(cssContent)) !== null) {
 						externalCssClasses.add(match[1])
 					}
+					cachedData.set(assetKey, [...externalCssClasses])
 				}
 			}
 
 			// 4. Lưu vào LocalStorage sau khi hoàn tất
-			localStorage.setItem(LS_KEY, JSON.stringify([...externalCssClasses]))
+			localStorage.setItem(LS_KEY, JSON.stringify([...cachedData]))
 
 			console.log(`[All-in-One] Đã tải và lưu ${externalCssClasses.size} classes vào LocalStorage.`)
 			alert(`Cập nhật thành công! Đã tìm thấy ${externalCssClasses.size} classes.`)
@@ -332,7 +342,10 @@
 			// TRƯỜNG HỢP 1: Đã có dữ liệu -> Load từ cache
 			try {
 				const parsedData = JSON.parse(cachedData)
-				parsedData.forEach(c => externalCssClasses.add(c))
+				const tmpMap = new Map(parsedData)
+				for (const [key, value] of tmpMap) {
+					value.forEach(r => externalCssClasses.add(r))
+				}
 				console.log(`[All-in-One] Loaded ${externalCssClasses.size} classes from LocalStorage.`)
 			} catch (e) {
 				console.error('Lỗi parse cache, sẽ fetch lại.', e)
@@ -378,19 +391,16 @@
 				fontSize: '14px',
 			})
 			document.body.appendChild(btn)
-		}else{
-			divEl.insertAdjacentHTML("afterbegin",'<a class="ui-button ui-button--transparent ui-button--size-small" href="javascript:void()" id="btn-refresh-css">Cập nhật CSS Cache</a>')
-			btn = divEl.querySelector('#btn-refresh-css')
+		} else {
+			divEl.insertAdjacentHTML('afterbegin', '<span class="ui-button ui-button--transparent ui-button--size-small" href="javascript:void(0);" id="btn-refresh-css">Cập nhật CSS Cache</span>')
 		}
-
+		btn = divEl.querySelector('#btn-refresh-css')
 		// Sự kiện click: Gọi hàm fetch với forceUpdate = true
-		btn.addEventListener("click",function () {
-			if (confirm('Bạn có muốn quét lại toàn bộ file CSS để cập nhật classes mới không? Quá trình này có thể mất vài giây.')) {
-				fetchExternalCSS(true)
-			}
+		btn.addEventListener('click', function (e) {
+			e.preventDefault()
+			console.log('clicked')
+			fetchExternalCSS(true)
 		})
-
-		
 	}
 
 	// --- 3. SCANNERS (Local JS & CSS) ---
@@ -398,11 +408,24 @@
 		const content = editor.getValue()
 		const newSet = new Set()
 		const wordRegex = /\b[a-zA-Z_$][a-zA-Z0-9_$]{1,}\b/g
-		let match
-		while ((match = wordRegex.exec(content)) !== null) {
-			const word = match[0]
-			if (!jsKeywords.includes(word)) {
-				newSet.add(word)
+
+		if (currentFileType === 'javascript') {
+			// File JS thuần -> Quét hết
+			let match
+			while ((match = wordRegex.exec(content)) !== null) {
+				if (!jsKeywords.includes(match[0])) newSet.add(match[0])
+			}
+		} else {
+			// File HTML -> Chỉ quét nội dung nằm trong cặp thẻ script
+			// Regex này bắt buộc phải có thẻ đóng mới lấy nội dung
+			const scriptBlockRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi
+			let blockMatch
+			while ((blockMatch = scriptBlockRegex.exec(content)) !== null) {
+				const jsContent = blockMatch[1]
+				let wordMatch
+				while ((wordMatch = wordRegex.exec(jsContent)) !== null) {
+					if (!jsKeywords.includes(wordMatch[0])) newSet.add(wordMatch[0])
+				}
 			}
 		}
 		localJsVars = newSet
@@ -432,26 +455,151 @@
 			}
 			localCssClasses = newSet
 		}
+		return localCssClasses
+	}
+
+	// Hàm này được gọi sau khi scanLocalCSS chạy xong
+	function updateLocalCachedDataWhenSaveFile(localCssClasses) {
+		// Set Update value current file to Cache
+		let matchCurrentFileName = window.location.href.match(/\?key\=(\w.*)/)
+		if (!matchCurrentFileName) return
+		let currentFileName = matchCurrentFileName[1]
+		const cachedData = localStorage.getItem(LS_KEY)
+
+		if (cachedData) {
+			const parsedData = JSON.parse(cachedData)
+			const tmpMap = new Map(parsedData)
+			tmpMap.set(currentFileName, [...localCssClasses])
+			localStorage.setItem(LS_KEY, JSON.stringify([...tmpMap]))
+		}
+	}
+
+	// --- HÀM XỬ LÝ SỰ KIỆN LƯU (Ctrl + S) ---
+	function handleCtrlS(editor) {
+		// 1. Scan lại dữ liệu cục bộ (JS Vars và CSS Classes)
+		let tmpClass = scanLocalCSS(editor) // Hàm này đã gọi updateLocalCachedDataWhenSaveFile() bên trong.
+		updateLocalCachedDataWhenSaveFile(tmpClass)
+		// 2. Chặn hành vi lưu mặc định của trình duyệt/code editor
+		// Thường cần trả về false hoặc gọi preventDefault() nếu có thể.
+		// Trong CodeMirror, việc định nghĩa extraKeys đã giúp chặn hành vi mặc định.
+
+		console.log('[All-in-One] Bắt Ctrl+S: Đã cập nhật local cache.')
+		// Thêm feedback nhỏ cho người dùng
+		const message = `[IntelliSense] Đã quét xong (${localCssClasses.size} classes) và cập nhật cache!`
+		console.warn(message)
+		// (Tùy chọn: Bạn có thể thêm một UI alert nhỏ ở đây)
 	}
 
 	// --- 4. CONTEXT HELPERS ---
-	function isJsContext(editor) {
+	// --- HÀM KIỂM TRA STRICT CONTEXT ---
+	function isJsContext(cm) {
 		if (currentFileType === 'javascript') return true
+
+		const cursor = cm.getCursor()
+		const doc = cm.getDoc()
+		const totalLines = doc.lineCount()
+
+		// --- FIX REGEX: Bỏ dấu ^ ---
+		const regexOpen = /<\s*script\b/gi
+		const regexClose = /<\s*\/\s*script\b/gi
+
+		const getRegexLastIndex = (str, regex) => {
+			regex.lastIndex = 0
+			let match
+			let lastIndex = -1
+			while ((match = regex.exec(str)) !== null) {
+				lastIndex = match.index
+			}
+			return lastIndex
+		}
+
+		// --- LOG BẮT ĐẦU ---
+		debugLog(`Checking JS Context at Line ${cursor.line + 1}, Ch ${cursor.ch}`)
+
+		// BƯỚC 1: QUÉT NGƯỢC
+		let foundOpenTag = false
+		for (let i = cursor.line; i >= 0; i--) {
+			let text = doc.getLine(i)
+			if (i === cursor.line) text = text.slice(0, cursor.ch)
+
+			const lastOpen = getRegexLastIndex(text, regexOpen)
+			const lastClose = getRegexLastIndex(text, regexClose)
+
+			if (lastClose !== -1) {
+				if (lastClose > lastOpen) {
+					debugLog(`-> FAIL: Found </script> at line ${i + 1} pos ${lastClose}. It is after <script pos ${lastOpen}`)
+					return false
+				}
+			}
+
+			if (lastOpen !== -1) {
+				debugLog(`-> FOUND START: <script at line ${i + 1} pos ${lastOpen}`)
+				foundOpenTag = true
+				break
+			}
+		}
+
+		if (!foundOpenTag) {
+			debugLog(`-> FAIL: Scanned all way up, no <script found.`)
+			return false
+		}
+
+		// BƯỚC 2: QUÉT XUÔI
+		for (let i = cursor.line; i < totalLines; i++) {
+			let text = doc.getLine(i)
+			if (i === cursor.line) text = text.slice(cursor.ch)
+
+			regexOpen.lastIndex = 0
+			regexClose.lastIndex = 0
+
+			const matchOpen = regexOpen.exec(text)
+			const matchClose = regexClose.exec(text)
+
+			const firstOpen = matchOpen ? matchOpen.index : -1
+			const firstClose = matchClose ? matchClose.index : -1
+
+			if (firstOpen !== -1) {
+				if (firstClose === -1 || firstOpen < firstClose) {
+					debugLog(`-> FAIL: Found new <script at line ${i + 1} pos ${firstOpen} BEFORE </script>`)
+					return false
+				}
+			}
+
+			if (firstClose !== -1) {
+				debugLog(`=> JS CONTEXT CONFIRMED! (Found <script up, </script> down)`)
+				return true
+			}
+		}
+
+		debugLog(`-> FAIL: End of file, no </script> found.`)
+		return false
+	}
+
+	// --- 4. CONTEXT HELPERS (Bổ sung logic bắt dính CSS) ---
+	function isCssContext(editor) {
+		// 1. Nếu file gốc là .css hoặc .scss -> Chắc chắn là CSS
+		if (currentFileType === 'css' || currentFileType === 'scss') return true
+
+		// 2. Kiểm tra inner mode (Cách chuẩn)
 		const cursor = editor.getCursor()
 		const token = editor.getTokenAt(cursor)
 		const inner = CodeMirror.innerMode(editor.getMode(), token.state)
+		if (inner.mode.name === 'css' || inner.mode.name === 'text/x-scss') return true
 
-		if (inner.mode.name === 'javascript') return true
-
-		// Deep State Check (V3 Logic)
+		// 3. Deep State Check (Dò tìm thẻ <style> trong file HTML/Liquid)
+		// CodeMirror 5 trong chế độ HTMLMixed thường giấu state CSS trong localState
 		let state = token.state
-		if (state.localState) state = state.localState
+		// Dò ngược state để xem có đang nằm trong thẻ style không
 		while (state) {
-			if (state.tagName === 'script') return true
-			if (state.htmlState && state.htmlState.tagName === 'script') return true
+			if (state.tagName === 'style') return true // Bắt dính thẻ <style>
+			if (state.context && state.context.tagName === 'style') return true
+
+			// Di chuyển xuống state sâu hơn hoặc thoát ra
 			if (state.htmlState) state = state.htmlState
+			else if (state.localState) state = state.localState
 			else break
 		}
+
 		return false
 	}
 
@@ -482,12 +630,9 @@
 		const cursor = editor.getCursor()
 		const lineContent = editor.getLine(cursor.line).slice(0, cursor.ch)
 		const classMatch = lineContent.match(/class\s*=\s*["']([^"']*)$/)
-
 		if (!classMatch) return null
-
 		const words = classMatch[1].split(/\s+/)
 		const wordToComplete = words[words.length - 1]
-
 		const combinedList = [...externalCssClasses, ...localCssClasses]
 		const resultList = combinedList.filter(cls => cls.startsWith(wordToComplete)).sort()
 
@@ -498,99 +643,125 @@
 		}
 	}
 
-	// --- 6. CORE LOGIC (The Router) ---
+	// --- 6. CORE LOGIC (Router v5 - Strict JS Fix) ---
 	function applyConfig(cm) {
 		if (cm._hasAllInOneHook) return
 
-		console.log('[All-in-One] Config Hooked!')
+		console.log('[All-in-One] Strict JS/CSS Context Applied!')
 		cm._wasInJsBlock = false
 		cm._wasInCssBlock = false
 
 		const extraKeys = cm.getOption('extraKeys') || {}
+		let debounceScanTimer = null
 
-		// *** SUPER CTRL+SPACE ROUTER ***
-		extraKeys['Ctrl-Space'] = function (editor) {
-			// 1. Scan Local Data Now
-			scanLocalJS(editor)
-			// Nếu đang ở file HTML/Liquid thì mới cần scan CSS local trong thẻ style,
-			// còn ở file CSS thì thôi (vì nặng) hoặc scan nhẹ.
-			if (currentFileType !== 'css') scanLocalCSS(editor)
-
-			// 2. Identify Context
-			const cursor = editor.getCursor()
-			const token = editor.getTokenAt(cursor)
-			const line = editor.getLine(cursor.line)
-
-			// Get current typing word
-			const startOfWord = line.slice(0, cursor.ch).search(/[a-zA-Z0-9_$]+$/)
-			const currentWord = startOfWord !== -1 ? line.slice(startOfWord, cursor.ch) : ''
-
-			// A. Check HTML Class Context first (Strong Signal)
-			// Regex check if cursor is inside class="..."
-			const isClassAttr = /class\s*=\s*["']([^"']*)$/.test(line.slice(0, cursor.ch))
-
-			if (isClassAttr) {
-				console.log('[Router] -> HTML Class Hints')
-				const hints = getClassHints(editor)
-				if (hints && hints.list.length > 0) {
-					CodeMirror.showHint(editor, () => hints, { completeSingle: false })
-				}
-				return
+		// --- SCANNER ---
+		const performFullScan = editor => {
+			// Chỉ scan JS nếu đang ở file JS hoặc trong thẻ script (để tiết kiệm)
+			if (currentFileType === 'javascript' || isJsContext(editor)) {
+				scanLocalJS(editor)
 			}
-
-			// B. Check JS Context
-			const isJS = isJsContext(editor)
-			// Fallback V3: If HTML but typing JS keyword (e.g. "con" -> console)
-			const looksLikeJS = currentFileType === 'html' && currentWord.length >= 2 && jsKeywords.some(k => k.startsWith(currentWord))
-
-			if (isJS || looksLikeJS) {
-				console.log('[Router] -> JS Hints')
-				CodeMirror.showHint(editor, getJsHints, { completeSingle: false })
-				return
-			}
-
-			// C. Check CSS Context (Inside <style> or .css file)
-			const innerMode = CodeMirror.innerMode(editor.getMode(), token.state).mode.name
-			if (innerMode === 'css' || currentFileType === 'css') {
-				console.log('[Router] -> CSS Hints')
-				CodeMirror.showHint(editor, CodeMirror.hint.css, { completeSingle: false })
-				return
-			}
-
-			// D. Default / HTML
-			console.log('[Router] -> Default/Anyword')
-			CodeMirror.showHint(editor, CodeMirror.hint.anyword, { completeSingle: false })
+			scanLocalCSS(editor)
 		}
 
+		// --- MAIN TRIGGER FUNCTION (V4.3 - Smart Hybrid Fix) ---
+    const triggerIntelliSense = (editor, isAuto = false) => {
+      if (!isAuto) performFullScan(editor)
+
+      const cursor = editor.getCursor()
+      const line = editor.getLine(cursor.line)
+
+      const hintOptions = {
+        completeSingle: false, // Quan trọng: Luôn hiện danh sách, không tự điền nếu chỉ có 1 kết quả
+        closeCharacters: /[\s()\[\]{};:>,]/,
+        alignWithWord: true,
+      }
+
+      // 1. Kiểm tra HTML Class (Ưu tiên số 1: class="...")
+      const isClassAttr = /class\s*=\s*["']([^"']*)$/.test(line.slice(0, cursor.ch))
+      if (isClassAttr) {
+        const hints = getClassHints(editor)
+        if (hints && hints.list.length > 0) CodeMirror.showHint(editor, () => hints, hintOptions)
+        return
+      }
+
+      // 2. Kiểm tra JS Context
+      if (isJsContext(editor)) {
+        CodeMirror.showHint(editor, getJsHints, hintOptions)
+        return
+      }
+
+      // 3. Kiểm tra CSS Context
+      if (isCssContext(editor)) {
+        CodeMirror.showHint(editor, CodeMirror.hint.css, hintOptions)
+        return
+      }
+
+      // --- 4. FALLBACK THÔNG MINH: HTML vs TEXT ---
+      // Logic: Thử lấy gợi ý HTML chuẩn trước. Nếu có kết quả thì dùng, nếu không thì dùng Anyword.
+      const token = editor.getTokenAt(cursor)
+      const inner = CodeMirror.innerMode(editor.getMode(), token.state)
+
+      if (inner.mode.name === 'xml') {
+        // Mẹo: Gọi trực tiếp hàm hint.html để xem nó có tìm thấy gì không
+        // Lưu ý: CodeMirror.hint.html trả về {list: [], ...} hoặc null
+        let htmlResult = null
+        try {
+            htmlResult = CodeMirror.hint.html(editor, hintOptions)
+        } catch (e) { /* Ignore error */ }
+
+        // Nếu HTML hint tìm thấy danh sách thẻ hoặc thuộc tính hợp lệ (ví dụ gõ '<' hoặc 'cla')
+        if (htmlResult && htmlResult.list && htmlResult.list.length > 0) {
+          CodeMirror.showHint(editor, CodeMirror.hint.html, hintOptions)
+          return
+        }
+      }
+
+      // 5. Nếu HTML Hint không trả về gì (ví dụ đang gõ nội dung text), dùng Anyword
+      if (isAuto) return
+      CodeMirror.showHint(editor, CodeMirror.hint.anyword, hintOptions)
+    }
+
+		// --- BINDING ---
+		extraKeys['Ctrl-S'] = function (editor) {
+			handleCtrlS(editor)
+			document.getElementById('save-button').click()
+		}
+		extraKeys['Ctrl-Space'] = function (editor) {
+			triggerIntelliSense(editor, false)
+		}
 		cm.setOption('extraKeys', extraKeys)
 
-		// *** SMART AUTO-SCAN ***
+		// --- INPUT EVENT ---
+		cm.on('inputRead', function (editor, change) {
+			const validTrigger = /[a-zA-Z0-9_\.\-\$#@]/
+			if (change.origin === '+input' && change.text[0] && validTrigger.test(change.text[0])) {
+				setTimeout(() => {
+					triggerIntelliSense(editor, true)
+				}, 20)
+			}
+
+			if (debounceScanTimer) clearTimeout(debounceScanTimer)
+			debounceScanTimer = setTimeout(() => {
+				performFullScan(editor)
+			}, 1500)
+		})
+
+		// --- CURSOR ACTIVITY ---
 		cm.on('cursorActivity', instance => {
-			const isNowInJs = isJsContext(instance)
+			const inJS = isJsContext(instance)
+			const inCSS = isCssContext(instance)
 
-			// Lấy inner mode để check CSS
-			const token = instance.getTokenAt(instance.getCursor())
-			const innerMode = CodeMirror.innerMode(instance.getMode(), token.state).mode.name
-			const isNowInCss = innerMode === 'css'
+			// Chỉ scan khi thực sự chuyển đổi ngữ cảnh để tránh lag
+			if (instance._wasInJsBlock && !inJS) scanLocalJS(instance)
+			// if (instance._wasInCssBlock && !inCSS) scanLocalCSS(instance) // CSS ít thay đổi cục bộ nên có thể bỏ qua
 
-			// Logic 1: Left JS Block -> Scan JS
-			if (instance._wasInJsBlock && !isNowInJs) {
-				scanLocalJS(instance)
-			}
-			// Logic 2: Left CSS Block -> Scan CSS
-			if (instance._wasInCssBlock && !isNowInCss) {
-				scanLocalCSS(instance)
-			}
-
-			instance._wasInJsBlock = isNowInJs
-			instance._wasInCssBlock = isNowInCss
+			instance._wasInJsBlock = inJS
+			instance._wasInCssBlock = inCSS
 		})
 
 		cm.on('blur', () => {
-			scanLocalJS(cm)
-			scanLocalCSS(cm)
+			performFullScan(cm)
 		})
-
 		cm._hasAllInOneHook = true
 	}
 
@@ -608,7 +779,9 @@
 
 	function init() {
 		currentFileType = detectFileType(window.location.href)
+		console.log('currentFileType', currentFileType)
 		waitLoadElement('#asset-list-container li a', function () {
+			console.log('loaded')
 			initCSSManager()
 		})
 
