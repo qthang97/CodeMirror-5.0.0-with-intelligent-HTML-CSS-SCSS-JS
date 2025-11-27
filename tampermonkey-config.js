@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Format Liquid Custom
+// @name         Format Liquid Custom New
 // @namespace    http://tampermonkey.net/
 // @version      2025-11-22
 // @description  try to take over the world!
@@ -125,66 +125,7 @@
 	/******************************************************************
 	 * LIQUID DETECT (block + inline + single tag)
 	 ******************************************************************/
-	/*
-	function extractLiquidBlocks(textArr) {
-		const regex_LiquidOpen = /{%-?\s*(if|for|case|unless|capture|paginate|comment|form)\b[\s\S]*?%}/gi
-		const regex_LiquidClose = /{%-?\s*endif|endfor|endcase|endunless|endcapture|endpaginate|endcomment|endform\b[\s\S]*?%}/gi
-		const regex_LiquidValue = /\{\{\s*[A-Za-zÀ-ỹ_][A-Za-z0-9À-ỹ_.]*\s*(\|[\s\S]*?)?\s*\}\}/i
-		let isLiquidBlock = false
-		let openCount = 0
-		let closeCount = 0
-		let currentStack = 0
-		let tmpstack = []
-		for (var i = 0; i < textArr.length; i++) {
-			// console.log('check row', i, textArr[i])
-			let matchOpen = textArr[i].match(regex_LiquidOpen)
-			if (matchOpen) {
-				if (!isLiquidBlock) {
-					// printDebugLog('start line:', i, 'matchOpen', matchOpen)
-					tmpstack[currentStack] = {
-						type: 'block',
-						startLine: i,
-						content: [],
-						formatted: [],
-						endLine: null,
-					}
-					isLiquidBlock = true
-				}
-				openCount += matchOpen.length
-			}
-			// console.log('openCount', openCount, 'closeCount', closeCount, 'isLiquidBlock', isLiquidBlock)
-			if (isLiquidBlock) {
-				tmpstack[currentStack].content.push(textArr[i].trim())
-				// console.log('Add to', trimValue, tmpstack[currentStack].content)
-			}
 
-			let matchClose = textArr[i].match(regex_LiquidClose)
-			if (matchClose) {
-				// printDebugLog('end line:', i, 'matchClose', matchClose)
-
-				closeCount += matchClose.length
-
-				if (openCount - closeCount == 0) {
-					tmpstack[currentStack].endLine = i
-					isLiquidBlock = false
-					currentStack++
-				}
-			}
-
-			if (regex_LiquidValue.test(textArr[i])) {
-				printDebugLog('liquid value detect', textArr[i].trim())
-				tmpstack.push({
-					type: 'line',
-					startLine: i,
-					content: [textArr[i].trim()],
-					formatted: [textArr[i].trim()],
-					endLine: i,
-				})
-			}
-		}
-		return tmpstack
-	}
-	*/
 	function extractLiquidBlocks(textArr) {
 		// --- 1. BLOCK REGEX (Giữ nguyên) ---
 		const regex_LiquidOpen = /{%-?\s*(if|for|case|unless|capture|paginate|comment|form)\b[\s\S]*?%}/gi
@@ -273,114 +214,136 @@
 	 * STYLE OR SCRIPT DETECT (style or script)
 	 ******************************************************************/
 	function extractStyleOrScriptBlock(textArr) {
-		// 1. Thay đổi Regex: Bỏ đoạn [^>]*> ở cuối để không bắt buộc phải đóng ngoặc ngay
+		// Cấu hình Regex
 		const styleTag = {
 			type: 'css',
-			regexStart: /^\s*<\s*style\b/i,
-			regexEnd: /^\s*<\s*\/\s*style\s*>/i,
+			tagName: 'style',
+			regexStart: /^\s*<\s*style\b/i, // Bắt đầu bằng <style
+			regexEnd: /<\s*\/\s*style\s*>/i, // Chứa </style>
 		}
 
 		const scriptTag = {
 			type: 'babel',
-			regexStart: /^\s*<\s*script\b/i,
-			regexEnd: /^\s*<\s*\/\s*script\s*>/i,
+			tagName: 'script',
+			regexStart: /^\s*<\s*script\b/i, // Bắt đầu bằng <script
+			regexEnd: /<\s*\/\s*script\s*>/i, // Chứa </script>
 		}
 
 		const tagArr = [styleTag, scriptTag]
 		let tmpStack = []
 		let currentStackIndex = 0
 
-		// State variables (Biến trạng thái)
-		let activeTagType = null // Đang xử lý loại thẻ nào (css/babel)
-		let isInsideBlock = false // Đang nằm trong block hay không
-		let hasFoundOpenBracket = false // Đã tìm thấy dấu > của thẻ mở chưa?
+		// Biến trạng thái
+		let activeTagType = null
+		let activeTagName = null
+		let openLineIndex = null
+		let isInsideBlock = false
+		let hasFoundOpenBracket = false
 
 		for (let i = 0; i < textArr.length; i++) {
 			let line = textArr[i]
 
-			// --- TRƯỜNG HỢP 1: CHƯA VÀO BLOCK (Tìm thẻ mở) ---
+			// --- TRƯỜNG HỢP 1: TÌM THẺ MỞ ---
 			if (!isInsideBlock) {
 				for (let j = 0; j < tagArr.length; j++) {
-					// Kiểm tra xem dòng này có bắt đầu bằng <script hoặc <style không
+					// Kiểm tra xem dòng có bắt đầu bằng thẻ mở không
 					if (line.match(tagArr[j].regexStart)) {
+						// 1. Khởi tạo Block mới
 						printDebugLog('Tag open start detected', tagArr[j].type, 'Line', i)
-
 						activeTagType = tagArr[j].type
+						activeTagName = tagArr[j].tagName
+						openLineIndex = i
+
+						// Mặc định cho là đã vào block
 						isInsideBlock = true
 
-						// Kiểm tra ngay dòng này có dấu > không (trường hợp viết 1 dòng)
-						// Lưu ý: check > sau vị trí của <script
-						if (line.includes('>')) {
-							hasFoundOpenBracket = true
-						} else {
-							hasFoundOpenBracket = false
-						}
+						// Kiểm tra dấu ">" của thẻ mở (để xem thẻ mở đã hoàn chỉnh chưa)
+						hasFoundOpenBracket = line.includes('>')
 
 						tmpStack[currentStackIndex] = {
 							type: activeTagType,
 							startIndex: i,
 							endIndex: null,
-							content: [line], // Push dòng đầu tiên vào
+							content: [line],
 							formatted: '',
 						}
 
-						// Edge case: Nếu thẻ mở và đóng nằm cùng 1 dòng (ví dụ: <script src="..."></script>)
+						// --- KIỂM TRA NGAY: MỞ VÀ ĐÓNG CÙNG 1 DÒNG ---
+						// Ví dụ: <style></style> HOẶC <script>console.log(1)</script>
+						// Điều kiện:
+						// 1. Phải tìm thấy dấu đóng ">" của thẻ mở (hasFoundOpenBracket == true)
+						// 2. Phải tìm thấy thẻ đóng (regexEnd) trên cùng dòng này
 						if (hasFoundOpenBracket && line.match(tagArr[j].regexEnd)) {
 							printDebugLog('Tag close (same line)', activeTagType, 'Line', i)
+
+							// Đánh dấu kết thúc ngay tại dòng này
 							tmpStack[currentStackIndex].endIndex = i
-							// Reset
+
+							// Reset trạng thái ngay lập tức (Coi như chưa từng vào block)
 							isInsideBlock = false
 							activeTagType = null
+							activeTagName = null
+							openLineIndex = null
+							hasFoundOpenBracket = false
+
+							// Tăng index để chuẩn bị cho block tiếp theo
 							currentStackIndex++
 						}
 
-						break // Đã tìm thấy tag, thoát vòng lặp tagArr
+						break // Thoát vòng lặp tagArr vì đã tìm thấy thẻ khớp
 					}
 				}
 				continue // Sang dòng tiếp theo
 			}
 
-			// --- TRƯỜNG HỢP 2: ĐANG Ở TRONG BLOCK ---
+			// --- TRƯỜNG HỢP 2: ĐANG Ở TRONG BLOCK (Xử lý các dòng tiếp theo) ---
 			if (isInsideBlock) {
 				tmpStack[currentStackIndex].content.push(line)
 
-				// 2.1. Nếu chưa tìm thấy dấu > của thẻ mở (Đang ở dòng attributes như 'defer', 'type=...')
+				// 2.1. Nếu thẻ mở chưa hoàn thiện (attribute nhiều dòng)
 				if (!hasFoundOpenBracket) {
 					if (line.includes('>')) {
 						hasFoundOpenBracket = true
-						printDebugLog('Tag open definition finished (Found >)', 'Line', i)
 
-						// Check ngay xem dòng này có thẻ đóng luôn không (Edge case dị: <script \n > console.log() </script>)
+						// Check ngay: Vừa đóng ">" xong thì có thẻ đóng </script> luôn không?
 						let currentTagConfig = tagArr.find(t => t.type === activeTagType)
 						if (line.match(currentTagConfig.regexEnd)) {
-							printDebugLog('Tag close found immediately', activeTagType, 'Line', i)
 							tmpStack[currentStackIndex].endIndex = i
 							isInsideBlock = false
 							activeTagType = null
+							activeTagName = null
+							openLineIndex = null
 							currentStackIndex++
 						}
 					}
-					// Dù có hay không, dòng này vẫn thuộc về Block, đã push ở trên rồi.
 					continue
 				}
 
-				// 2.2. Nếu đã vào phần nội dung code, tìm thẻ đóng </script> hoặc </style>
+				// 2.2. Tìm thẻ đóng trong nội dung code bình thường
 				let currentTagConfig = tagArr.find(t => t.type === activeTagType)
 
 				if (line.match(currentTagConfig.regexEnd)) {
 					printDebugLog('Tag close found', activeTagType, 'Line', i)
 					tmpStack[currentStackIndex].endIndex = i
 
-					// Reset state để tìm block tiếp theo
+					// Reset trạng thái
 					isInsideBlock = false
 					activeTagType = null
-					hasFoundOpenBracket = false
+					activeTagName = null
+					openLineIndex = null
 					currentStackIndex++
 				}
 			}
 		}
+
+		// --- KIỂM TRA LỖI: THIẾU THẺ ĐÓNG ---
+		if (isInsideBlock) {
+			throw new Error(`Lỗi cú pháp: Thẻ <${activeTagName}> mở tại dòng ${openLineIndex + 1} chưa được đóng (thiếu </${activeTagName}>).`)
+		}
+
 		return tmpStack
 	}
+
 	/******************************************************************
 	 * MAIN FORMATTER (JS/CSS/Liquid)
 	 ******************************************************************/
@@ -584,11 +547,15 @@
 	}
 
 	async function formatterLiquid(text) {
+		// 1. Khởi tạo mảng rỗng ngay từ đầu để tránh lỗi undefined trong catch
+		let stackOtherLiquid = []
+
 		try {
 			let textArr = text.split('\n')
 			printDebugLog('textArr default', textArr)
 
-			let stackOtherLiquid = extractStyleOrScriptBlock(textArr)
+			// Gán giá trị cho biến đã khai báo bên ngoài
+			stackOtherLiquid = extractStyleOrScriptBlock(textArr)
 			printDebugLog('stackOtherLiquid', stackOtherLiquid)
 
 			if (stackOtherLiquid.length == 0) {
@@ -598,18 +565,37 @@
 			} else {
 				printDebugLog('Found style or script block')
 				let liquidFormatted = ''
+
+				// --- LOGIC CHÍNH GIỮ NGUYÊN ---
 				for (let i = stackOtherLiquid.length - 1; i >= 0; i--) {
 					let result = ''
 					let currentStack = stackOtherLiquid[i]
-					let tempTag = {
-						open: currentStack.content[0].trim(),
-						close: currentStack.content[currentStack.content.length - 1].trim(),
-					}
-					currentStack.content.splice(0, 1)
-					currentStack.content.splice(-1, 1)
+					let tempTag = { open: '', close: '' }
 
-					// Remove Block
-					textArr.splice(currentStack.startIndex, currentStack.endIndex - currentStack.startIndex + 1)
+					if (currentStack.startIndex === currentStack.endIndex) {
+						// 1. Xử lý 1 dòng
+						const line = currentStack.content[0]
+						const splitRegex = /(<\s*(?:script|style)[^>]*>)([\s\S]*?)(<\s*\/\s*(?:script|style)\s*>)/i
+						const match = line.match(splitRegex)
+
+						if (match) {
+							tempTag = { open: match[1], close: match[3] }
+							currentStack.content = [match[2]]
+						} else {
+							// Fallback phòng hờ
+							tempTag = { open: '', close: '' }
+						}
+						textArr.splice(currentStack.startIndex, 1)
+					} else {
+						// 2. Xử lý nhiều dòng
+						tempTag = {
+							open: currentStack.content[0].trim(),
+							close: currentStack.content[currentStack.content.length - 1].trim(),
+						}
+						currentStack.content.splice(0, 1)
+						currentStack.content.splice(-1, 1)
+						textArr.splice(currentStack.startIndex, currentStack.endIndex - currentStack.startIndex + 1)
+					}
 
 					// Add Comment block ID
 					textArr.splice(currentStack.startIndex, 0, `{% comment %}LIQUID_BLOCK_ID_${i}{% endcomment %}`)
@@ -629,13 +615,11 @@
 							result = currentStack.content
 						}
 					} catch (subError) {
-						// TÍNH TOÁN LẠI DÒNG LỖI
-						// Lỗi trong block con + Vị trí bắt đầu block = Lỗi thực tế trong file
+						// TÍNH TOÁN LẠI DÒNG LỖI (Sub-block)
 						if (subError.loc && subError.loc.start) {
-							// +1 vì dòng đầu tiên là thẻ <style> hoặc <script>
 							subError.loc.start.line += currentStack.startIndex + 1
 						}
-						throw subError // Ném lỗi đã chỉnh sửa ra ngoài
+						throw subError
 					}
 					if (!result) throw new Error('Format sub-block returned empty')
 					// Add 1 tab
@@ -660,6 +644,46 @@
 				return replaceValueAfterFormat(liquidFormatted, stackOtherLiquid, 'liquid-html')
 			}
 		} catch (e) {
+			// --- PHẦN BỔ SUNG BẮT LỖI ---
+			// Mục tiêu: Cộng trả lại số dòng đã bị xóa (do gộp block thành 1 dòng comment)
+
+			let errorLine = null
+			if (e.loc && e.loc.start && e.loc.start.line) {
+				errorLine = e.loc.start.line
+			} else if (e.line) {
+				errorLine = e.line
+			}
+
+			if (errorLine && stackOtherLiquid.length > 0) {
+				// Sắp xếp lại stack theo thứ tự xuất hiện từ trên xuống dưới (để tính toán chính xác)
+				// Dùng .slice() để copy mảng tránh ảnh hưởng mảng gốc, sau đó sort
+				let sortedStack = stackOtherLiquid.slice().sort((a, b) => a.startIndex - b.startIndex)
+
+				let totalLinesRemoved = 0
+
+				for (let block of sortedStack) {
+					// Vị trí của block này trong file "đã bị nén" mà Prettier nhìn thấy
+					// = Vị trí gốc - số dòng đã bị xóa bởi các block trước đó
+					let positionInCompressedFile = block.startIndex - totalLinesRemoved
+
+					// Nếu dòng lỗi nằm SAU block này, thì dòng lỗi đó đã bị ảnh hưởng bởi việc xóa dòng
+					if (errorLine > positionInCompressedFile) {
+						let originalLength = block.endIndex - block.startIndex + 1
+						let replacedLength = 1 // Vì thay bằng 1 dòng comment
+						let diff = originalLength - replacedLength
+
+						totalLinesRemoved += diff
+					} else {
+						// Nếu lỗi nằm trước block này thì không cần tính tiếp các block sau nữa
+						break
+					}
+				}
+
+				// Cập nhật lại dòng lỗi
+				if (e.loc && e.loc.start) e.loc.start.line += totalLinesRemoved
+				if (e.line) e.line += totalLinesRemoved
+			}
+
 			throw e
 		}
 	}
@@ -717,8 +741,17 @@
 					cm.removeLineClass(errorLine - 1, 'background', 'cm-error-line')
 				}, 5000)
 			}
-
-			alert(errorMsg)
+			const error_el = document.querySelector('#UIFlashWrapper')
+			if (!error_el) return
+			error_el.classList.add('ui-flash-wrapper--is-visible')
+			let error_div = error_el.querySelector('#UIFlashMessage')
+			if (!error_div) return
+			if (!error_div.classList.contains('ui-flash--error')) {
+				error_div.classList.add('ui-flash--error')
+			}
+			let messError = error_el.querySelector('.ui-flash__message')
+			if (!messError) return
+			messError.innerText = errorMsg
 		}
 	}
 
