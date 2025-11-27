@@ -24,7 +24,7 @@
 		}
 	}
 
-	const DEBUG = true
+	const DEBUG = false
 	const JS_TYPE = {
 		name: 'Javascript',
 		regex: /\.(js\.bwt)|(js)$/i,
