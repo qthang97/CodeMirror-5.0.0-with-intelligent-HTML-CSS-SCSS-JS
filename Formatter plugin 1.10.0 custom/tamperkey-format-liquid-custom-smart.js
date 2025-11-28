@@ -7,11 +7,11 @@
 // @match        https://*.mysapo.net/admin/themes/*
 // @exclude      https://*.mysapo.net/admin/themes/editor/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=mysapo.net
-// @require 		 https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/prettier-3.6.2-standalone.js
-// @require 		 https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/prettier-plugin-liquid-1.10.0-standalone.js
-// @require			 https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/prettier-3.6.2-babel-plugin.js
-// @require			 https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/pretier-3.6.2-postcss-plugin.js
-// @require 		 https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/prettier-3.2.5-estree-plugin.js
+// @require 		 https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Formatter%20plugin%201.10.0%20custom/prettier-3.6.2-standalone.js
+// @require 		 https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Formatter%20plugin%201.10.0%20custom/prettier-plugin-liquid-1.10.0-standalone.js
+// @require			 https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Formatter%20plugin%201.10.0%20custom/prettier-3.6.2-babel-plugin.js
+// @require			 https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Formatter%20plugin%201.10.0%20custom/pretier-3.6.2-postcss-plugin.js
+// @require 		 https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Formatter%20plugin%201.10.0%20custom/prettier-3.2.5-estree-plugin.js
 // ==/UserScript==
 
 ;(function () {
