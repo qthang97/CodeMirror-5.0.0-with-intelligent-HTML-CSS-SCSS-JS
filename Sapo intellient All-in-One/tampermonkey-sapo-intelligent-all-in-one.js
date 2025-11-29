@@ -19,13 +19,6 @@
 // @require      https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Sapo%20intellient%20All-in-One/walk-8-3-2.min.js
 // @require      https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Sapo%20intellient%20All-in-One/csstree-2-3-1.min.js
 // @require      https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Sapo%20intellient%20All-in-One/fuse-7-0-0.min.js
-// @require		   https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Sapo%20intellient%20All-in-One/html-hint.min.js
-// @require		   https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Sapo%20intellient%20All-in-One/javascript-hint.min.js
-// @require		   https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Sapo%20intellient%20All-in-One/show-hint.min.js
-// @require		   https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Sapo%20intellient%20All-in-One/xml-hint.min.js
-// @require		   https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Sapo%20intellient%20All-in-One/css-hint.min.js
-// @require		   https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Sapo%20intellient%20All-in-One/anyword-hint.min.js
-
 // ==/UserScript==
 
 ;(function () {
@@ -259,8 +252,9 @@
 		return meta ? meta.getAttribute('content') : ''
 	}
 
-	async function fetchExternalCSS(forceUpdate = false) {
+	async function fetchExternalCSS(forceUpdate = false, retryCount = 0) {
 		console.log('[All-in-One] Bắt đầu tiến trình lấy CSS...')
+		const MAX_RETRIES = 2
 		let EXTERNAL_CSS_URL = []
 		let cachedData = new Map()
 
@@ -333,7 +327,7 @@
 					}
 
 					if (!parsedSuccess) {
-						const regex = /\.([a-zA-Z0-9_\-]+)\s*\{/g
+						const regex = /\.([a-zA-Z0-9_\-]+)/g //<-- Không cần dấu {, bắt được nhiều hơn
 						let match
 						while ((match = regex.exec(cssContent)) !== null) {
 							externalCssClasses.add(match[1])
@@ -348,9 +342,34 @@
 			alert(`Cập nhật thành công! Đã tìm thấy ${externalCssClasses.size} classes.`)
 		} catch (e) {
 			console.error('[All-in-One] Lỗi khi fetch CSS:', e)
+
+			// --- BỔ SUNG LOGIC RETRY TẠI ĐÂY ---
+			if (retryCount < MAX_RETRIES) {
+				const nextRetry = retryCount + 1
+				const delay = 2000 // 2 giây
+
+				console.log(`[All-in-One] Gặp lỗi, chờ ${delay}ms để thử lại lần ${nextRetry}...`)
+
+				// Cập nhật text hiển thị lỗi tạm thời
+				const btn = document.getElementById('btn-refresh-css')
+				if (btn) btn.innerText = `Lỗi! Thử lại sau ${delay / 1000}s...`
+				const cachingStatus = document.getElementById('csscaching')
+				if (cachingStatus) cachingStatus.innerText = `Mất kết nối. Đang thử lại (${nextRetry}/${MAX_RETRIES})...`
+
+				// Gọi lại hàm sau thời gian delay
+				setTimeout(() => {
+					fetchExternalCSS(forceUpdate, nextRetry)
+				}, delay)
+
+				// Return để thoát khỏi hàm hiện tại, không chạy xuống finally ngay
+				return
+			}
 		} finally {
-			const btn = document.getElementById('btn-refresh-css')
-			if (btn) btn.innerText = 'Cập nhật CSS Cache'
+			// Chỉ reset nút bấm nếu KHÔNG PHẢI đang chờ retry
+			if (retryCount >= MAX_RETRIES || !document.getElementById('btn-refresh-css')?.innerText.includes('Thử lại sau')) {
+				const btn = document.getElementById('btn-refresh-css')
+				if (btn) btn.innerText = 'Cập nhật CSS Cache'
+			}
 		}
 	}
 
@@ -363,9 +382,12 @@
 				for (const [key, value] of tmpMap) {
 					value.forEach(r => externalCssClasses.add(r))
 				}
+				document.getElementById('csscaching')?.remove()
 				console.log(`[All-in-One] Loaded ${externalCssClasses.size} classes from LocalStorage.`)
 			} catch (e) {
 				console.error('Lỗi parse cache, sẽ fetch lại.', e)
+				const cachingStatus = document.getElementById('csscaching')
+				if (cachingStatus) cachingStatus.innerText = 'Lỗi parse cache, đang fetch lại....'
 				fetchExternalCSS(true)
 			}
 		} else {
@@ -492,9 +514,11 @@
 		const newSet = new Set()
 
 		const parseCssHybrid = cssText => {
+			// Mask Liquid tags
 			let cleanCss = cssText.replace(/\{%[\s\S]*?%\}/g, ' ').replace(/\{\{[\s\S]*?\}\}/g, ' ')
 			let parsed = false
 
+			// Ưu tiên dùng CSSTree
 			try {
 				const ast = csstree.parse(cleanCss, {
 					parseValue: false,
@@ -511,9 +535,12 @@
 				parsed = false
 			}
 
+			// Fallback Regex: Cập nhật Regex mạnh hơn
+			// Bắt tất cả chuỗi .classname kể cả khi không có dấu { ngay sau
 			if (!parsed) {
 				const regex = /\.([a-zA-Z0-9_\-]+)/g
 				let match
+				// Quét trên cleanCss để tránh Liquid tag làm nhiễu
 				while ((match = regex.exec(cleanCss)) !== null) {
 					newSet.add(match[1])
 				}
@@ -712,27 +739,35 @@
 		}
 	}
 
+	// HTML Class Hint (FIXED: Ưu tiên StartsWith)
 	function getClassHints(editor) {
 		const cursor = editor.getCursor()
 		const lineContent = editor.getLine(cursor.line).slice(0, cursor.ch)
+
+		// Regex bắt class="..." hoặc class='...'
 		const classMatch = lineContent.match(/class\s*=\s*["']([^"']*)$/)
 		if (!classMatch) return null
+
 		const words = classMatch[1].split(/\s+/)
 		const wordToComplete = words[words.length - 1]
 
+		// Gộp tất cả class từ External và Local
 		const combinedList = [...externalCssClasses, ...localCssClasses]
 
-		const fuse = new Fuse(combinedList, {
-			threshold: 0.2, // Chặt chẽ hơn cho Class
-		})
+		// 1. Tìm các Class bắt đầu bằng từ khóa (Prefix Match) - Ưu tiên số 1
+		// VD: gõ "col" -> lấy "col-6", "col-md-12"
+		let resultList = combinedList.filter(cls => cls.startsWith(wordToComplete))
 
-		const searchResults = fuse.search(wordToComplete)
-		let resultList = []
+		// Sắp xếp: Class ngắn lên trước (VD: "col-6" lên trước "col-6-auto")
+		resultList.sort((a, b) => a.length - b.length || a.localeCompare(b))
 
-		if (searchResults.length > 0) {
-			resultList = searchResults.map(res => res.item)
-		} else {
-			resultList = combinedList.filter(cls => cls.startsWith(wordToComplete)).sort()
+		// 2. Logic "Fallback":
+		// CHỈ KHI KHÔNG TÌM THẤY class nào bắt đầu bằng từ khóa, lúc đó mới tìm "bao gồm" (Contains)
+		// Điều này giúp loại bỏ "rác" như "cart__col-6" khi bạn đang gõ "col-6"
+		if (resultList.length === 0 && wordToComplete.length >= 2) {
+			let containsMatches = combinedList.filter(cls => cls.includes(wordToComplete))
+			containsMatches.sort((a, b) => a.length - b.length || a.localeCompare(b))
+			resultList = containsMatches
 		}
 
 		return {
@@ -747,6 +782,9 @@
 		if (cm._hasAllInOneHook) return
 
 		console.log('[All-in-One] Strict JS/CSS Context Applied!')
+		document.body.insertAdjacentHTML('beforeend', `<div style="position: fixed;bottom: 0;z-index: 999;background: #08f;right: 4px;color: #fff;padding: 2px 10px;" id="csscaching"></div>`)
+		const cachingStatus = document.getElementById('csscaching')
+		if (cachingStatus) cachingStatus.innerText = 'Chờ css caching...'
 		cm._wasInJsBlock = false
 		cm._wasInCssBlock = false
 
