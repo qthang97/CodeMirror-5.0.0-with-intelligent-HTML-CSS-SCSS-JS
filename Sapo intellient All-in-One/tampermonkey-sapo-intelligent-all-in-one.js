@@ -21,7 +21,7 @@
 // @require      https://raw.githubusercontent.com/qthang97/prettier-plugin-liquid-1.10.0/refs/heads/main/Sapo%20intellient%20All-in-One/fuse-7-0-0.min.js
 // ==/UserScript==
 
-;(function () {
+; (function () {
 	'use strict'
 
 	// #region ==================== MODULE 1: Utils ====================
@@ -298,42 +298,42 @@
 		// List of void (self-closing) HTML elements that don't need closing tags
 		// prettier-ignore
 		#voidElements = new Set([
-            'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
-            'link', 'meta', 'param', 'source', 'track', 'wbr', 'command', 'keygen', 'menuitem'
-        ])
+			'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+			'link', 'meta', 'param', 'source', 'track', 'wbr', 'command', 'keygen', 'menuitem'
+		])
 
 		// Common HTML tags for autocomplete
 		// prettier-ignore
 		#htmlTags = [
-            // Document structure
-            'html', 'head', 'body', 'title', 'meta', 'link', 'script', 'style', 'base',
-            // Sections
-            'header', 'footer', 'main', 'nav', 'section', 'article', 'aside', 'address',
-            // Headings
-            'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hgroup',
-            // Content grouping
-            'div', 'span', 'p', 'pre', 'blockquote', 'figure', 'figcaption', 'hr',
-            // Lists
-            'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'menu',
-            // Text semantics
-            'a', 'em', 'strong', 'small', 's', 'cite', 'q', 'dfn', 'abbr', 'code',
-            'var', 'samp', 'kbd', 'sub', 'sup', 'i', 'b', 'u', 'mark', 'ruby', 'rt',
-            'rp', 'bdi', 'bdo', 'br', 'wbr', 'time', 'data',
-            // Forms
-            'form', 'input', 'button', 'select', 'option', 'optgroup', 'textarea',
-            'label', 'fieldset', 'legend', 'datalist', 'output', 'progress', 'meter',
-            // Tables
-            'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
-            // Media
-            'img', 'audio', 'video', 'source', 'track', 'picture', 'embed', 'object',
-            'param', 'iframe', 'canvas', 'map', 'area', 'svg', 'math',
-            // Interactive
-            'details', 'summary', 'dialog',
-            // Template
-            'template', 'slot', 'noscript',
-            // Deprecated but still used
-            'center', 'font', 'marquee'
-        ]
+			// Document structure
+			'html', 'head', 'body', 'title', 'meta', 'link', 'script', 'style', 'base',
+			// Sections
+			'header', 'footer', 'main', 'nav', 'section', 'article', 'aside', 'address',
+			// Headings
+			'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hgroup',
+			// Content grouping
+			'div', 'span', 'p', 'pre', 'blockquote', 'figure', 'figcaption', 'hr',
+			// Lists
+			'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'menu',
+			// Text semantics
+			'a', 'em', 'strong', 'small', 's', 'cite', 'q', 'dfn', 'abbr', 'code',
+			'var', 'samp', 'kbd', 'sub', 'sup', 'i', 'b', 'u', 'mark', 'ruby', 'rt',
+			'rp', 'bdi', 'bdo', 'br', 'wbr', 'time', 'data',
+			// Forms
+			'form', 'input', 'button', 'select', 'option', 'optgroup', 'textarea',
+			'label', 'fieldset', 'legend', 'datalist', 'output', 'progress', 'meter',
+			// Tables
+			'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+			// Media
+			'img', 'audio', 'video', 'source', 'track', 'picture', 'embed', 'object',
+			'param', 'iframe', 'canvas', 'map', 'area', 'svg', 'math',
+			// Interactive
+			'details', 'summary', 'dialog',
+			// Template
+			'template', 'slot', 'noscript',
+			// Deprecated but still used
+			'center', 'font', 'marquee'
+		]
 
 		constructor(CodeMirror_Global_Object_input, editor_input, options = {}, debug = false) {
 			super(CodeMirror_Global_Object_input, editor_input, options, debug)
@@ -1618,6 +1618,93 @@
 			}
 		}
 
+		// ===== CSS PSEUDO INTELLISENSE =====
+		isInsideFunctionSelector(line, cursor) {
+			const before = line.slice(0, cursor.ch)
+
+			// tìm ":not(" gần nhất
+			const lastNot = before.lastIndexOf(':not(')
+			if (lastNot === -1) return false
+
+			// kiểm tra có đóng ")" chưa
+			const afterNot = before.slice(lastNot)
+			const open = (afterNot.match(/\(/g) || []).length
+			const close = (afterNot.match(/\)/g) || []).length
+
+			return open > close
+		}
+		GetPseudoHints(cursor, token, line) {
+			const pseudoClasses = [
+				'active', 'checked', 'disabled', 'empty', 'enabled',
+				'first-child', 'first-of-type', 'focus', 'hover',
+				'last-child', 'last-of-type', 'link', 'not',
+				'nth-child', 'nth-of-type', 'only-child',
+				'only-of-type', 'required', 'root', 'target',
+				'valid', 'visited'
+			]
+
+			const pseudoElements = [
+				'after', 'before', 'first-letter', 'first-line',
+				'marker', 'selection', 'placeholder'
+			]
+
+			const beforeCursor = line.slice(0, cursor.ch)
+
+			const match = beforeCursor.match(/(:{1,2})([a-zA-Z-]*)$/)
+			if (!match) return null
+
+			const typedColons = match[1]; // Lấy prefix mà user đã gõ (":" hoặc "::")
+			const raw = match[2].toLowerCase()
+			const colonCount = typedColons.length
+
+			const insideNot = this.isInsideFunctionSelector(line, cursor)
+
+			let list = []
+
+			// Fix lỗi undefined name: Dựa vào số dấu ":" user gõ để quyết định danh sách tìm kiếm
+			if (colonCount === 2) {
+				list = pseudoElements
+			} else if (colonCount === 1) {
+				list = pseudoClasses
+			} else {
+				return null
+			}
+
+			const matched = list.filter(p => p.startsWith(raw))
+			if (matched.length === 0) return null
+
+			// Tính toán trước vị trí Start bắt đầu thay thế (Bao trùm cả dấu : user đã gõ)
+			const startCh = cursor.ch - raw.length - colonCount;
+
+			return {
+				list: matched.map(name => ({
+					text: name,
+					displayText: colonCount === 2 ? `::${name}` : `:${name}`,
+					className: 'CodeMirror-hint-pseudo',
+					hint: (cm) => {
+						const from = {
+							line: cursor.line,
+							ch: startCh // Lùi về trước cả dấu : hoặc ::
+						}
+
+						const to = {
+							line: cursor.line,
+							ch: cursor.ch
+						}
+
+						const isElement = pseudoElements.includes(name)
+						// Quyết định prefix theo TYPE chuẩn, tự động sửa lỗi cho user
+						const correctPrefix = isElement ? '::' : ':'
+
+						// Thay thế toàn bộ ":no" thành ":not" (hoặc "::after")
+						cm.replaceRange(correctPrefix + name, from, to)
+					}
+				})),
+				from: this.CodeMirror_Global_Object.Pos(cursor.line, startCh),
+				to: this.CodeMirror_Global_Object.Pos(cursor.line, cursor.ch)
+			}
+		}
+
 		/**
 		 * Provides hints for CSS/SCSS context (classes, variables, functions)
 		 * @returns {Object|null} Hint object for CodeMirror
@@ -1715,7 +1802,14 @@
 				}
 			}
 
-			// CASE 2: SCSS Directives (@)
+			// CASE 2: CSS Pseudo-class / pseudo-element (:, ::)
+			const pseudoHints = this.GetPseudoHints(cursor, token, line)
+			if (pseudoHints) {
+				this.PrintDebugLog('Using pseudo hints')
+				return pseudoHints
+			}
+
+			// CASE 2.5: SCSS Directives (@)
 			if (word.startsWith('@') || startChar === '@' || token.type === 'def') {
 				this.PrintDebugLog('SCSS directive context detected')
 
@@ -2057,34 +2151,34 @@
 		// Type-specific methods
 		// prettier-ignore
 		#typeSpecificMethods = {
-            string: ['charAt', 'charCodeAt', 'concat', 'endsWith', 'includes', 'indexOf', 'lastIndexOf', 'localeCompare', 'match', 'matchAll', 'normalize', 'padEnd', 'padStart', 'repeat', 'replace', 'replaceAll', 'search', 'slice', 'split', 'startsWith', 'substring', 'substr', 'toLowerCase', 'toUpperCase', 'trim', 'trimStart', 'trimEnd', 'length'],
-            array: ['at', 'concat', 'entries', 'every', 'fill', 'filter', 'find', 'findIndex', 'flat', 'flatMap', 'forEach', 'includes', 'indexOf', 'join', 'keys', 'lastIndexOf', 'map', 'pop', 'push', 'reduce', 'reduceRight', 'reverse', 'shift', 'slice', 'some', 'sort', 'splice', 'unshift', 'values', 'length'],
-            number: ['toExponential', 'toFixed', 'toLocaleString', 'toPrecision', 'toString', 'valueOf'],
-            object: ['hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable', 'toString', 'valueOf'],
-            date: ['getDate', 'getDay', 'getFullYear', 'getHours', 'getMilliseconds', 'getMinutes', 'getMonth', 'getSeconds', 'getTime', 'setDate', 'setFullYear', 'setHours', 'toDateString', 'toISOString', 'toJSON', 'toString'],
-            promise: ['then', 'catch', 'finally'],
-            map: ['clear', 'delete', 'entries', 'forEach', 'get', 'has', 'keys', 'set', 'values', 'size'],
-            set: ['add', 'clear', 'delete', 'entries', 'forEach', 'has', 'keys', 'values', 'size'],
-            regexp: ['exec', 'test', 'toString', 'source', 'global', 'ignoreCase', 'multiline', 'lastIndex'],
-        }
+			string: ['charAt', 'charCodeAt', 'concat', 'endsWith', 'includes', 'indexOf', 'lastIndexOf', 'localeCompare', 'match', 'matchAll', 'normalize', 'padEnd', 'padStart', 'repeat', 'replace', 'replaceAll', 'search', 'slice', 'split', 'startsWith', 'substring', 'substr', 'toLowerCase', 'toUpperCase', 'trim', 'trimStart', 'trimEnd', 'length'],
+			array: ['at', 'concat', 'entries', 'every', 'fill', 'filter', 'find', 'findIndex', 'flat', 'flatMap', 'forEach', 'includes', 'indexOf', 'join', 'keys', 'lastIndexOf', 'map', 'pop', 'push', 'reduce', 'reduceRight', 'reverse', 'shift', 'slice', 'some', 'sort', 'splice', 'unshift', 'values', 'length'],
+			number: ['toExponential', 'toFixed', 'toLocaleString', 'toPrecision', 'toString', 'valueOf'],
+			object: ['hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable', 'toString', 'valueOf'],
+			date: ['getDate', 'getDay', 'getFullYear', 'getHours', 'getMilliseconds', 'getMinutes', 'getMonth', 'getSeconds', 'getTime', 'setDate', 'setFullYear', 'setHours', 'toDateString', 'toISOString', 'toJSON', 'toString'],
+			promise: ['then', 'catch', 'finally'],
+			map: ['clear', 'delete', 'entries', 'forEach', 'get', 'has', 'keys', 'set', 'values', 'size'],
+			set: ['add', 'clear', 'delete', 'entries', 'forEach', 'has', 'keys', 'values', 'size'],
+			regexp: ['exec', 'test', 'toString', 'source', 'global', 'ignoreCase', 'multiline', 'lastIndex'],
+		}
 		// prettier-ignore
 		#jQueryMethods = ['hasClass', 'remove', 'empty', 'clone', 'find', 'children', 'parent', 'parents', 'closest', 'siblings', 'next', 'prev', 'on', 'off', 'one', 'trigger', 'click', 'focus', 'blur', 'change', 'submit', 'show', 'hide', 'toggle', 'fadeIn', 'fadeOut', 'slideDown', 'slideUp', 'animate', 'each', 'map', 'filter', 'width', 'height', 'offset', 'scrollTop', 'scrollLeft']
 
 		// prettier-ignore
 		#jsBuiltIns = {
-            Array: ['from', 'isArray', 'of'],
-            Object: ['assign', 'create', 'keys', 'values', 'entries', 'freeze', 'seal'],
-            String: ['fromCharCode', 'fromCodePoint'],
-            Number: ['isNaN', 'isFinite', 'isInteger', 'parseFloat', 'parseInt'],
-            Math: ['abs', 'ceil', 'floor', 'round', 'max', 'min', 'random', 'sqrt', 'pow'],
-            Date: ['now', 'parse', 'UTC'],
-            JSON: ['parse', 'stringify'],
-            console: ['log', 'warn', 'error', 'info', 'debug', 'table'],
-            document: ['querySelector', 'querySelectorAll', 'getElementById', 'getElementsByClassName', 'createElement', 'addEventListener'],
-            window: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'alert', 'confirm', 'prompt', 'fetch'],
-            Promise: ['all', 'allSettled', 'any', 'race', 'resolve', 'reject'],
-            Swiper: ['slideTo', 'slideNext', 'slidePrev', 'update', 'destroy', 'on', 'off'],
-        }
+			Array: ['from', 'isArray', 'of'],
+			Object: ['assign', 'create', 'keys', 'values', 'entries', 'freeze', 'seal'],
+			String: ['fromCharCode', 'fromCodePoint'],
+			Number: ['isNaN', 'isFinite', 'isInteger', 'parseFloat', 'parseInt'],
+			Math: ['abs', 'ceil', 'floor', 'round', 'max', 'min', 'random', 'sqrt', 'pow'],
+			Date: ['now', 'parse', 'UTC'],
+			JSON: ['parse', 'stringify'],
+			console: ['log', 'warn', 'error', 'info', 'debug', 'table'],
+			document: ['querySelector', 'querySelectorAll', 'getElementById', 'getElementsByClassName', 'createElement', 'addEventListener'],
+			window: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'alert', 'confirm', 'prompt', 'fetch'],
+			Promise: ['all', 'allSettled', 'any', 'race', 'resolve', 'reject'],
+			Swiper: ['slideTo', 'slideNext', 'slidePrev', 'update', 'destroy', 'on', 'off'],
+		}
 
 		constructor(CodeMirror_Global_Object_input, editor_input, options = {}, debug = false) {
 			super(CodeMirror_Global_Object_input, editor_input, options, debug)
@@ -3071,8 +3165,8 @@
 	if (!window.__loaded) {
 		window.__loaded = true
 		onElementFound('.CodeMirror', function (CodeMirrorEl) {
-			console.log('CodeMirrorEl loaded', CodeMirrorEl)
-			new SapoWebIntelligent(CodeMirror, CodeMirrorEl.CodeMirror, { site_name: SITE_NAME }, true)
+			// console.log('CodeMirrorEl loaded', CodeMirrorEl)
+			new SapoWebIntelligent(CodeMirror, CodeMirrorEl.CodeMirror, { site_name: SITE_NAME }, false)
 		})
 	}
 	// #endregion Initializer
